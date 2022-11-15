@@ -31,3 +31,11 @@ def calculate_SNR(pxx_pred, f_pred, currHR, signal):
     allPower = np.sum(np.take(pxx, np.where(fmask2)))
     SNR_temp = mag2db(sPower / (allPower - sPower))
     return SNR_temp
+
+
+def calculate_HR(pxx_pred, frange_pred, fmask_pred, pxx_label, frange_label, fmask_label):
+    pred_HR = np.take(frange_pred, np.argmax(
+        np.take(pxx_pred, fmask_pred), 0))[0] * 60
+    ground_truth_HR = np.take(frange_label, np.argmax(
+        np.take(pxx_label, fmask_label), 0))[0] * 60
+    return pred_HR, ground_truth_HR

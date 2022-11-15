@@ -38,16 +38,10 @@ class HRCELoss(nn.Module):
         """
         DFT: F(**k**) = \sum_{n = 0}^{N - 1} f(n) * \exp{-j2 \pi n **k** / N}
         :param wave: predict ecg  B x N
-        :param gt: bvp B,
+        :param gt: heart rate B,
         :param fps:
         :return:
         """
-        # 将 label 换算为 HR
-        # gt x (fps x 60 / N) = gt / (N / (fps x 60))
-        hr = torch.mul(gt, fps)  # 哈达玛积
-        hr = hr * 60 / self.clip_length
-        hr[hr.ge(self.high_bound)] = self.high_bound - 1  # truncate
-        hr[hr.le(self.low_bound)] = self.low_bound
 
         # DFT
         batch_size = wave.shape[0]  # N
@@ -65,7 +59,7 @@ class HRCELoss(nn.Module):
                            + torch.sum(preds * torch.cos(k * tmp), dim=-1) ** 2
 
         # 平移区间 [40, 150] -> [0, 110]
-        target = hr - self.low_bound
+        target = gt - self.low_bound
         target = target.type(torch.long).view(batch_size)
 
         """# 预测心率
