@@ -56,7 +56,7 @@ def calculate_SNR(psd, freq, gtHR, target):
     return pred_HR, ground_truth_HR"""
 
 
-def calculate_physiology(signal: np.ndarray, target="pulse", fs=30, diff=True):
+def calculate_physiology(signal: np.ndarray, target="pulse", fs=30, diff=True, detrend_flag=True):
     """
     根据预测信号计算 HR or FR
     get filter -> detrend -> get psd and freq -> get mask -> get HR
@@ -64,27 +64,27 @@ def calculate_physiology(signal: np.ndarray, target="pulse", fs=30, diff=True):
     :param target: pulse or respiration
     :param fs:
     :param diff: 是否为差分信号
+    :param detrend_flag: 是否需要 detrend
     :return:
     """
     # TODO: respiration 是否需要 cumsum
+    if diff:
+        signal = signal.cumsum(axis=-1)
+    if detrend_flag:
+        signal = detrend(signal, 100)
     # get filter and detrend
     if target == "pulse":
         # regular heart beats are 0.75 * 60 and 2.5 * 60
         [b, a] = butter(1, [0.75 / fs * 2, 2.5 / fs * 2], btype='bandpass')
-        if diff:
-            signal = signal.cumsum(axis=-1)
-        signal = detrend(signal, 100)
     else:
         # regular respiration is 0.08 * 60 and 0.5 * 60
         [b, a] = butter(1, [0.08 / fs * 2, 0.5 / fs * 2], btype='bandpass')
-        if diff:
-            signal = signal.cumsum()
     # bandpass
     signal = scipy.signal.filtfilt(b, a, np.double(signal))
     # get psd
     freq, psd = periodogram(signal, fs=fs, nfft=4 * signal.shape[-1], detrend=False)
     # get mask
-    if target == 'pulse':
+    if target == "pulse":
         mask = np.argwhere((freq >= 0.75) & (freq <= 2.5))
     else:
         mask = np.argwhere((freq >= 0.08) & (freq <= 0.5))
