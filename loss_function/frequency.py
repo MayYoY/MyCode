@@ -2,91 +2,88 @@ import math
 import torch
 from torch.autograd import Variable
 import numpy as np
-import torch.nn.functional as F
 import torch.nn as nn
 
 
-# TODO: 修改为自己的风格
+# TODO: 短序列心率计算不准确
 class HRCELoss(nn.Module):
-    def __init__(self, clip_length=300, delta=3, use_snr=False):
+    def __init__(self, T=300, delta=3, reduction="mean", use_snr=False, device="cuda"):
+        """
+        :param T: 序列长度
+        :param delta: 信号带宽, 带宽外的认为是噪声, 验证阶段的 delta 为 60 * 0.1
+        :param reduction:
+        :param use_snr:
+        :param device:
+        """
         super(HRCELoss, self).__init__()
-
-        self.clip_length = clip_length
-        self.time_length = 300
+        self.T = T
         self.delta = delta
-        # self.delta_distribution = [0.4, 0.25, 0.05]
         self.low_bound = 40
         self.high_bound = 150
-
-        self.bpm_range = torch.arange(self.low_bound, self.high_bound, dtype=torch.float).cuda()
-        self.bpm_range = self.bpm_range / 60.0
-
-        two_pi_n = Variable(2 * math.pi * torch.arange(0, self.time_length, dtype=torch.float))
-        hanning = Variable(torch.from_numpy(np.hanning(self.time_length)).type(torch.FloatTensor),
-                           requires_grad=True).view(1, -1)  # 1 x N
-
-        self.two_pi_n = two_pi_n.cuda()
-        self.hanning = hanning.cuda()
-
-        self.cross_entropy = nn.CrossEntropyLoss()
-        self.nll = nn.NLLLoss()
-        self.l1 = nn.L1Loss()
+        # for DFT
+        self.bpm_range = torch.arange(self.low_bound, self.high_bound,
+                                      dtype=torch.float, device=device) / 60.
+        self.two_pi_n = Variable(2 * math.pi * torch.arange(0, self.T, dtype=torch.float,
+                                                            device=device))
+        self.hanning = Variable(torch.from_numpy(np.hanning(self.T)).type(torch.FloatTensor),
+                                requires_grad=True).view(1, -1).to(device)  # 1 x N
+        # criterion
+        self.reduction = reduction
+        self.cross_entropy = nn.CrossEntropyLoss(reduction=reduction)
 
         self.use_snr = use_snr
+        self.device = device
 
-    def forward(self, wave, gt, fps):  # all variable operation
+    def forward(self, wave, labels, fps):
         """
         DFT: F(**k**) = \sum_{n = 0}^{N - 1} f(n) * \exp{-j2 \pi n **k** / N}
         :param wave: predict ecg  B x N
-        :param gt: heart rate B,
-        :param fps:
+        :param labels: heart rate B,
+        :param fps: B,
         :return:
         """
-
         # DFT
-        batch_size = wave.shape[0]  # N
-        k = self.bpm_range / fps  # DFT 中的 k = N x fk / fs, x N 与 (-j2 \pi n **k** / N) 抵消
+        B = wave.shape[0]
+        # DFT 中的 k = N x fk / fs, x N 与 (-j2 \pi n **k** / N) 抵消
+        k = self.bpm_range[None, :] / fps[:, None]
+        k = k.view(B, -1, 1)  # B x range x 1
         # 汉宁窗
         preds = wave * self.hanning  # B x N
-        preds = preds.view(batch_size, 1, -1)  # B x 1 x N
-        # 求 k
-        k = k.view(batch_size, -1, 1)  # B x range x 1
+        preds = preds.view(B, 1, -1)  # B x 1 x N
         # 2 \pi n
-        tmp = self.two_pi_n.repeat(batch_size, 1)
-        tmp = tmp.view(batch_size, 1, -1)  # B x 1 x N
+        temp = self.two_pi_n.repeat(B, 1)
+        temp = temp.view(B, 1, -1)  # B x 1 x N
         # B x range
-        complex_absolute = torch.sum(preds * torch.sin(k * tmp), dim=-1) ** 2 \
-                           + torch.sum(preds * torch.cos(k * tmp), dim=-1) ** 2
-
+        complex_absolute = torch.sum(preds * torch.sin(k * temp), dim=-1) ** 2 \
+                           + torch.sum(preds * torch.cos(k * temp), dim=-1) ** 2
         # 平移区间 [40, 150] -> [0, 110]
-        target = gt - self.low_bound
-        target = target.type(torch.long).view(batch_size)
+        labels -= self.low_bound
+        labels = labels.type(torch.long).view(B)
 
         """# 预测心率
         whole_max_val, whole_max_idx = complex_absolute.max(1)
         whole_max_idx = whole_max_idx + self.low_bound"""
 
         if self.use_snr:
-            norm_t = (torch.ones(batch_size).cuda() / torch.sum(complex_absolute, dim=1))
+            # 归一化
+            norm_t = (torch.ones(B, device=self.device) / torch.sum(complex_absolute, dim=1))
             norm_t = norm_t.view(-1, 1)  # B x 1
             complex_absolute = complex_absolute * norm_t  # B x range
-
-            loss = self.cross_entropy(complex_absolute, target)
-
-            idx_l = target - self.delta
-            idx_l[idx_l.le(0)] = 0
+            # CE loss
+            loss = self.cross_entropy(complex_absolute, labels)
             # truncate
-            idx_r = target + self.delta
-            idx_r[idx_r.ge(self.high_bound - self.low_bound - 1)] = self.high_bound - self.low_bound - 1
-
+            left = labels - self.delta  # B,
+            left[left.le(0)] = 0
+            right = labels + self.delta
+            right[right.ge(self.high_bound - self.low_bound - 1)] = self.high_bound - self.low_bound - 1
+            # SNR
             loss_snr = 0.0
-            for i in range(0, batch_size):
-                loss_snr += 1 - torch.sum(complex_absolute[i, idx_l[i]:idx_r[i]])
-
-            loss_snr = loss_snr / batch_size
-
+            for i in range(0, B):
+                loss_snr += 1 - torch.sum(complex_absolute[i, left[i]:right[i]])
+            if self.reduction == "mean":
+                loss_snr = loss_snr / B
             loss += loss_snr
         else:
-            loss = self.cross_entropy(complex_absolute, target)
+            loss = self.cross_entropy(complex_absolute, labels)
 
-        return loss
+        return loss  # , whole_max_idx

@@ -56,6 +56,7 @@ def calculate_SNR(psd, freq, gtHR, target):
     return pred_HR, ground_truth_HR"""
 
 
+# TODO: respiration 是否需要 cumsum; 短序列心率计算不准确
 def calculate_physiology(signal: np.ndarray, target="pulse", fs=30, diff=True, detrend_flag=True):
     """
     根据预测信号计算 HR or FR
@@ -67,7 +68,6 @@ def calculate_physiology(signal: np.ndarray, target="pulse", fs=30, diff=True, d
     :param detrend_flag: 是否需要 detrend
     :return:
     """
-    # TODO: respiration 是否需要 cumsum
     if diff:
         signal = signal.cumsum(axis=-1)
     if detrend_flag:
