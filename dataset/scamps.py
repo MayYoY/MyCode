@@ -253,23 +253,3 @@ class Preprocess:
         label = label / np.std(label)
         label[np.isnan(label)] = 0
         return label
-
-
-class SCAMPS(data.Dataset):
-    def __init__(self, config):
-        super(SCAMPS, self).__init__()
-        self.config = config
-        self.record = pd.read_csv(self.config.record_path)["input_files"].values.tolist()
-        self.Fs = self.config.Fs
-
-    def __len__(self):
-        return len(self.record)
-
-    def __getitem__(self, idx):
-        x_path = self.record[idx]
-        y_path = self.record[idx].replace("input", "label")
-        x = torch.from_numpy(np.load(x_path))
-        if self.config.trans is not None:
-            x = self.config.trans(x)
-        y = torch.from_numpy(np.load(y_path))
-        return x, y

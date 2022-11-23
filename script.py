@@ -5,11 +5,10 @@ import glob
 import os
 from torch.utils import data
 
-from dataset import ubfc_rppg
-from config import PreprocessConfig, UBFCConfig
+from dataset import utils, pure
+from config import PreprocessConfig, LoadConfig
 
-myset = ubfc_rppg.UBFC_rPPG(UBFCConfig)
-my_iter = data.DataLoader(myset, batch_size=UBFCConfig.batch_size)
-for x, y in my_iter:
-    print(x.shape)
-    print(y.shape)
+test_set = utils.MyDataset(LoadConfig, source="PURE")
+test_iter = data.DataLoader(test_set, batch_size=LoadConfig.batch_size, shuffle=True)
+for x, y in test_iter:
+    continue

@@ -2,9 +2,10 @@ from torchvision import transforms
 
 
 class PreprocessConfig:
-    input_path = "D:\papers\Video\my_code\\ubfc_rppg_test\dataset2"
-    output_path = "D:\papers\Video\my_code\\ubfc_rppg_test\processed\data"
-    record_path = "D:\papers\Video\my_code\\ubfc_rppg_test\processed\\record.csv"
+    # for PURE
+    input_path = "D:\papers\Video\pure_test"
+    output_path = "D:\papers\Video\my_code\processed\data"
+    record_path = "D:\papers\Video\my_code\processed\\record.csv"
 
     W = 72
     H = 72
@@ -15,11 +16,14 @@ class PreprocessConfig:
     LARGE_FACE_BOX = True
     LARGE_BOX_COEF = 1.5
 
+    INTERPOLATE = True  # for PURE
+
     DATA_TYPE = ["Standardize"]  # Raw / Difference / Standardize
     LABEL_TYPE = "Standardize"
 
     DO_CHUNK = True
     CHUNK_LENGTH = 300
+    CHUNK_STRIDE = -1
 
 
 class SCAMPSConfig:
@@ -29,8 +33,8 @@ class SCAMPSConfig:
     trans = None
 
 
-class UBFCConfig:
-    record_path = "D:\papers\Video\my_code\\ubfc_rppg_test\processed\\record.csv"
+class LoadConfig:
+    record_path = "D:\papers\Video\my_code\processed\\record.csv"
     Fs = 30
     batch_size = 2
     trans = None

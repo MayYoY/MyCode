@@ -1,6 +1,10 @@
 import numpy as np
+import pandas as pd
 import cv2 as cv
 from math import ceil
+
+import torch
+from torch.utils import data
 
 
 def resize(frames, dynamic_det, det_length,
@@ -109,7 +113,7 @@ def diff_normalize_label(label):
     return normalized_label
 
 
-def standardized_data(data):
+def standardize(data):
     """Difference frames and normalization data"""
     data = data - np.mean(data)
     data = data / np.std(data)
@@ -117,8 +121,22 @@ def standardized_data(data):
     return data
 
 
-def standardized_label(label):
-    label = label - np.mean(label)
-    label = label / np.std(label)
-    label[np.isnan(label)] = 0
-    return label
+class MyDataset(data.Dataset):
+    def __init__(self, config, source="VIPL-HR"):
+        super(MyDataset, self).__init__()
+        self.config = config
+        self.source = source
+        self.record = pd.read_csv(self.config.record_path)["input_files"].values.tolist()
+        self.Fs = self.config.Fs  # 30
+
+    def __len__(self):
+        return len(self.record)
+
+    def __getitem__(self, idx):
+        x_path = self.record[idx]
+        y_path = self.record[idx].replace("input", "label")
+        x = torch.from_numpy(np.load(x_path))  # C x T x H x W
+        if self.config.trans is not None:
+            x = self.config.trans(x)
+        y = torch.from_numpy(np.load(y_path))  # T x num (for ubfc num=3, for pure num=2)
+        return x, y
