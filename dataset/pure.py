@@ -1,11 +1,20 @@
 """
 PURE 数据集
 视频数据以图片形式存储; 标签数据以 json 文件存储
+data/PURE/
+|   |-- 01-01/
+|      |-- 01-01/
+|      |-- 01-01.json
+|   |-- 01-02/
+|      |-- 01-02/
+|      |-- 01-02.json
+|...
+|   |-- ii-jj/
+|      |-- ii-jj/
+|      |-- ii-jj.json
 The videos at a frame rate of 30 Hz with a cropped resolution of 640x480 pixels and a 4.8mm lens.
 Reference data delivers pulse rate wave and SpO2 readings with a sampling rate of 60 Hz.
-# 下采样, 三次样条插值
-fun = interpolate.CubicSpline(range(len(hr)), hr)
-hr_down = fun(np.arange(0, len(hr), 2))
+下采样, 三次样条插值
 """
 
 
@@ -29,7 +38,7 @@ class Preprocess:
     def __init__(self, output_path, config):
         self.output_path = output_path
         self.config = config
-        self.dirs = glob.glob(self.config.input_path + os.sep + "*.json")
+        self.dirs = glob.glob(self.config.input_path + os.sep + "*-*")
 
     def read_process(self):
         """Preprocesses the raw data."""
@@ -37,11 +46,12 @@ class Preprocess:
         progress_bar = tqdm(list(range(file_num)))
         file_list = []
         for i in progress_bar:
+            subject = self.dirs[i][-5:]
             # read json
-            with open(self.dirs[i]) as f:
+            with open(self.dirs[i] + os.sep + subject + ".json") as f:
                 info = json.load(f)
             # load video and ground truth
-            frames = self.read_video(self.dirs[i], info)  # T x H x W x 3
+            frames = self.read_video(self.dirs[i], subject, info)  # T x H x W x 3
             gts = self.read_wave(info)
             # 有可能仍未对齐
             if len(frames) > gts.shape[1]:
@@ -51,7 +61,7 @@ class Preprocess:
             # detect -> crop -> resize -> transform -> chunk -> save
             # n x len x H x W x C, n x len x 2
             frames_clips, gts_clips = self.preprocess(frames, gts)
-            file_list += self.save(frames_clips, gts_clips, self.dirs[i][-10: -5])
+            file_list += self.save(frames_clips, gts_clips, subject)
         file_list = pd.DataFrame(file_list, columns=['input_files'])
         file_list.to_csv(self.config.record_path, index=False)
 
@@ -119,12 +129,13 @@ class Preprocess:
 
         return frames_clips, gts_clips
 
-    def read_video(self, path, info):
+    @staticmethod
+    def read_video(path, subject, info):
         """读取视频 T x H x W x C, C = 3"""
         frames = []
         for img_info in info["/Image"]:
             # 地址计算
-            img = cv.imread(self.config.input_path + os.sep + path[-10: -5] +
+            img = cv.imread(path + os.sep + subject +
                             os.sep + f"Image{img_info['Timestamp']}.png")
             img = cv.cvtColor(img, cv.COLOR_BGR2RGB)
             frames.append(np.array(img))

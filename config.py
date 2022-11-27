@@ -3,9 +3,9 @@ from torchvision import transforms
 
 class PreprocessConfig:
     # for PURE
-    input_path = "D:\papers\Video\pure_test"
-    output_path = "D:\papers\Video\my_code\processed\data"
-    record_path = "D:\papers\Video\my_code\processed\\record.csv"
+    input_path = "D:\papers\Video\pure_new"
+    output_path = "D:\papers\Video\pure_new\process\data"
+    record_path = "D:\papers\Video\pure_new\process\\record.csv"
 
     W = 72
     H = 72
@@ -34,7 +34,7 @@ class SCAMPSConfig:
 
 
 class LoadConfig:
-    record_path = "D:\papers\Video\my_code\processed\\record.csv"
+    record_path = "D:\papers\Video\pure_new\process\\record.csv"
     Fs = 30
     batch_size = 2
     trans = None

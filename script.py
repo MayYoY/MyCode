@@ -11,4 +11,7 @@ from config import PreprocessConfig, LoadConfig
 test_set = utils.MyDataset(LoadConfig, source="PURE")
 test_iter = data.DataLoader(test_set, batch_size=LoadConfig.batch_size, shuffle=True)
 for x, y in test_iter:
-    continue
+    print(x.shape)
+    print(y.shape)
+"""ops = pure.Preprocess(PreprocessConfig.output_path, PreprocessConfig)
+ops.read_process()"""
