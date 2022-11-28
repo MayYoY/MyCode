@@ -122,19 +122,19 @@ def standardize(data):
 
 
 class MyDataset(data.Dataset):
-    def __init__(self, config, source="VIPL-HR"):
+    def __init__(self, config, source="PURE"):
         super(MyDataset, self).__init__()
         self.config = config
         self.source = source
-        self.record = pd.read_csv(self.config.record_path)["input_files"].values.tolist()
+        self.input_files = pd.read_csv(self.config.record_path)["input_files"].values.tolist()
         self.Fs = self.config.Fs  # 30
 
     def __len__(self):
-        return len(self.record)
+        return len(self.input_files)
 
     def __getitem__(self, idx):
-        x_path = self.record[idx]
-        y_path = self.record[idx].replace("input", "label")
+        x_path = self.input_files[idx]
+        y_path = self.input_files[idx].replace("input", "label")
         x = torch.from_numpy(np.load(x_path))  # C x T x H x W
         if self.config.trans is not None:
             x = self.config.trans(x)

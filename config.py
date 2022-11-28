@@ -2,10 +2,10 @@ from torchvision import transforms
 
 
 class PreprocessConfig:
-    # for PURE
-    input_path = "D:\papers\Video\pure_new"
-    output_path = "D:\papers\Video\pure_new\process\data"
-    record_path = "D:\papers\Video\pure_new\process\\record.csv"
+    # for VIPL-HR
+    input_path = "D:\\papers\\Video\\pure_test"
+    output_path = "D:\\papers\\Video\\pure_test\\processed\\data"
+    record_path = "D:\\papers\Video\\pure_test\\processed\\record.csv"
 
     W = 72
     H = 72
@@ -27,14 +27,24 @@ class PreprocessConfig:
 
 
 class SCAMPSConfig:
-    record_path = "D:\papers\Video\\test_cache\\record.csv"
+    record_path = "D:\\papers\\Video\\test_cache\\record.csv"
     Fs = 30
     batch_size = 2
     trans = None
 
 
 class LoadConfig:
-    record_path = "D:\papers\Video\pure_new\process\\record.csv"
+    record_path = "D:\\papers\\Video\\pure_test\\processed\\record.csv"
     Fs = 30
-    batch_size = 2
+    batch_size = 4
     trans = None
+
+
+class VIPLConfig:
+    record_path = "D:\\papers\\Video\\VIPL-HR_test\\processed\\record.csv"
+    Fs = 30
+    batch_size = 4
+    trans = None
+    type = "RGB"
+    task = None
+    fold = None
