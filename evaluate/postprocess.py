@@ -1,7 +1,7 @@
 import numpy as np
 import scipy
 import scipy.io
-from scipy.signal import butter, periodogram
+from scipy.signal import butter, periodogram, find_peaks
 from scipy.sparse import spdiags
 
 
@@ -57,13 +57,13 @@ def calculate_SNR(psd, freq, gtHR, target):
 
 
 # TODO: respiration 是否需要 cumsum; 短序列心率计算不准确
-def calculate_physiology(signal: np.ndarray, target="pulse", fs=30, diff=True, detrend_flag=True):
+def fft_physiology(signal: np.ndarray, target="pulse", Fs=30, diff=True, detrend_flag=True):
     """
-    根据预测信号计算 HR or FR
+    利用 fft 计算 HR or FR
     get filter -> detrend -> get psd and freq -> get mask -> get HR
     :param signal: T, or B x T
     :param target: pulse or respiration
-    :param fs:
+    :param Fs:
     :param diff: 是否为差分信号
     :param detrend_flag: 是否需要 detrend
     :return:
@@ -75,14 +75,14 @@ def calculate_physiology(signal: np.ndarray, target="pulse", fs=30, diff=True, d
     # get filter and detrend
     if target == "pulse":
         # regular heart beats are 0.75 * 60 and 2.5 * 60
-        [b, a] = butter(1, [0.75 / fs * 2, 2.5 / fs * 2], btype='bandpass')
+        [b, a] = butter(1, [0.75 / Fs * 2, 2.5 / Fs * 2], btype='bandpass')
     else:
         # regular respiration is 0.08 * 60 and 0.5 * 60
-        [b, a] = butter(1, [0.08 / fs * 2, 0.5 / fs * 2], btype='bandpass')
+        [b, a] = butter(1, [0.08 / Fs * 2, 0.5 / Fs * 2], btype='bandpass')
     # bandpass
     signal = scipy.signal.filtfilt(b, a, np.double(signal))
     # get psd
-    freq, psd = periodogram(signal, fs=fs, nfft=4 * signal.shape[-1], detrend=False)
+    freq, psd = periodogram(signal, fs=Fs, nfft=4 * signal.shape[-1], detrend=False)
     # get mask
     if target == "pulse":
         mask = np.argwhere((freq >= 0.75) & (freq <= 2.5))
@@ -96,4 +96,34 @@ def calculate_physiology(signal: np.ndarray, target="pulse", fs=30, diff=True, d
     else:
         idx = psd[:, mask.reshape(-1)].argmax(-1)
     phys = freq[idx] * 60
-    return phys
+    return phys.reshape(-1)
+
+
+def peak_physiology(signal: np.ndarray, target="pulse", Fs=30, diff=True, detrend_flag=True):
+    """
+    利用 fft 计算 HR or FR
+    get filter -> detrend -> get psd and freq -> get mask -> get HR
+    :param signal: T, or B x T
+    :param target: pulse or respiration
+    :param Fs:
+    :param diff: 是否为差分信号
+    :param detrend_flag: 是否需要 detrend
+    :return:
+    """
+    if diff:
+        signal = signal.cumsum(axis=-1)
+    if detrend_flag:
+        signal = detrend(signal, 100)
+    if target == 'pulse':
+        [b, a] = butter(1, [0.75 / Fs * 2, 2.5 / Fs * 2],
+                        btype='bandpass')  # 2.5 -> 1.7
+    else:
+        [b, a] = butter(1, [0.08 / Fs * 2, 0.5 / Fs * 2], btype='bandpass')
+    # bandpass
+    signal = scipy.signal.filtfilt(b, a, np.double(signal))
+    phys = []
+    for s in signal:
+        peaks, _ = find_peaks(s)
+        phys.append(60 * Fs / np.diff(peaks).mean(axis=-1))
+
+    return np.asarray(phys)
