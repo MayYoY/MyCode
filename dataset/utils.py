@@ -93,7 +93,7 @@ def chunk(frames, gts, chunk_length, chunk_stride=-1):
 
 
 def diff_normalize_data(data):
-    """Difference frames and normalization data"""
+    """差分 + normalize frame"""
     n, h, w, c = data.shape
     normalized_len = n - 1
     normalized_data = np.zeros((normalized_len, h, w, c), dtype=np.float32)
@@ -106,7 +106,7 @@ def diff_normalize_data(data):
 
 
 def diff_normalize_label(label):
-    """Difference frames and normalization labels"""
+    """差分 + normalize label"""
     diff_label = np.diff(label, axis=0)  # 差分
     normalized_label = diff_label / np.std(diff_label)
     normalized_label[np.isnan(normalized_label)] = 0
@@ -114,7 +114,7 @@ def diff_normalize_label(label):
 
 
 def standardize(data):
-    """Difference frames and normalization data"""
+    """standardize data"""
     data = data - np.mean(data)
     data = data / np.std(data)
     data[np.isnan(data)] = 0
