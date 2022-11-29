@@ -169,11 +169,11 @@ class Preprocess:
             ret, frame = vid.read()
 
         frames = np.asarray(frames)
-        """if data_path[-1] == "1":  # 25fps
+        if data_path[-1] != "2":  # != 30fps
             time = np.loadtxt(data_path + os.sep + "time.txt").reshape(-1)[1:]
             fun = interpolate.CubicSpline(time, frames)
             x_new = np.linspace(0, time[-1], num=1.2 * len(frames))  # 30fps
-            frames = fun(x_new)"""
+            frames = fun(x_new)
         return frames
 
     @staticmethod
