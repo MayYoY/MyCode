@@ -57,14 +57,13 @@ class Preprocess:
         """Preprocesses the raw data."""
         file_num = len(self.dirs)
         progress_bar = tqdm(list(range(file_num)))
-        csv_info = {"input_files": [], "fold": [], "task": [], "source": []}
+        csv_info = {"input_files": [], "fold": [], "task": [], "source": [], "Fs": []}
         for pi in self.dirs:  # i_th subject
             tasks = glob.glob(pi + os.sep + "*")  # [v1(, v1-2), v2, ...]
             for ti in tasks:
                 sources = glob.glob(ti + os.sep + "*")  # [source1, source2, ...]
                 for si in sources:
-                    # 1: 25fps, 2: 30fps, 3: ~30fps, 4: ~30fps
-                    frames = self.read_video(si)  # T x H x W x C, [0, 255]
+                    frames, Fs = self.read_video(si)  # T x H x W x C, [0, 255]
                     waves = self.read_wave(si)  # T_w,
                     fun = interpolate.CubicSpline(range(len(waves)), waves)
                     x_new = np.linspace(0, len(waves), num=len(frames))
@@ -80,19 +79,22 @@ class Preprocess:
                         t_idx = re.findall("v(\d-\d)", ti)[0]  # v1-2
                     s_idx = re.findall("source(\d)", si)[0]
                     single_info = {"filename": f"p{p_idx}_v{t_idx}_source{s_idx}",
-                                   "fold": self.folds[int(p_idx)], "task": t_idx, "source": s_idx}
+                                   "fold": self.folds[int(p_idx)], "task": t_idx,
+                                   "source": s_idx, "Fs": Fs}
                     # file_list, fold_list, task_list, source_list
                     temp = self.save(frames_clips, gts_clips, single_info)
                     csv_info["input_files"] += temp[0]
                     csv_info["fold"] += temp[1]
                     csv_info["task"] += temp[2]
                     csv_info["source"] += temp[3]
+                    csv_info["Fs"] += temp[4]
             progress_bar.update(1)
 
         csv_info = pd.DataFrame(csv_info)
         csv_info.to_csv(self.config.record_path, index=False)
 
-    def save(self, frames_clips: np.array, gts_clips: np.array, single_info: dict) -> Tuple[list, list, list, list]:
+    def save(self, frames_clips: np.array, gts_clips: np.array,
+             single_info: dict) -> Tuple[list, list, list, list, list]:
         """Saves the preprocessing data."""
         if not os.path.exists(self.output_path):
             os.makedirs(self.output_path, exist_ok=True)
@@ -107,7 +109,8 @@ class Preprocess:
         fold_list = [single_info["fold"]] * len(gts_clips)
         task_list = [single_info["task"]] * len(gts_clips)
         source_list = [single_info["source"]] * len(gts_clips)
-        return file_list, fold_list, task_list, source_list
+        Fs_list = [single_info["Fs"]] * len(gts_clips)
+        return file_list, fold_list, task_list, source_list, Fs_list
 
     def preprocess(self, frames, gts):
         """
@@ -156,7 +159,7 @@ class Preprocess:
 
     @staticmethod
     def read_video(data_path):
-        """读取视频 T x H x W x C, C = 3 or 1"""
+        """读取视频 T x H x W x C, C = 3"""
         vid = cv.VideoCapture(data_path + os.sep + "video.avi")
         vid.set(cv.CAP_PROP_POS_MSEC, 0)  # 设置从 0 开始读取
         ret, frame = vid.read()
@@ -169,12 +172,12 @@ class Preprocess:
             ret, frame = vid.read()
 
         frames = np.asarray(frames)
-        if data_path[-1] != "2":  # != 30fps
-            time = np.loadtxt(data_path + os.sep + "time.txt").reshape(-1)[1:]
-            fun = interpolate.CubicSpline(time, frames)
-            x_new = np.linspace(0, time[-1], num=1.2 * len(frames))  # 30fps
-            frames = fun(x_new)
-        return frames
+        # Warning: 不同视频的实际帧率与 readme 有偏差, 需要额外记录
+        if data_path[-1] == "2":
+            Fs = 30
+        else:
+            Fs = len(frames) * 1000 / np.loadtxt(data_path + os.sep + "time.txt")[-1]
+        return frames, Fs
 
     @staticmethod
     def read_wave(data_path):
@@ -193,9 +196,11 @@ class VIPL_HR(utils.MyDataset):
     """
     def __init__(self, config):
         super(VIPL_HR, self).__init__(config=config, source="VIPL-HR")
-        tasks = pd.read_csv(self.config.record_path)["task"].values.tolist()
-        sources = pd.read_csv(self.config.record_path)["source"].values.tolist()
-        folds = pd.read_csv(self.config.record_path)["fold"].values.tolist()
+        tasks = self.record["task"].values.tolist()
+        sources = self.record["source"].values.tolist()
+        folds = self.record["fold"].values.tolist()
+        self.Fs = self.record["Fs"].values.tolist()
+        # 选定指定视频
         if config.type == "RGB":
             m1 = [s != 4 for s in sources]
         else:
@@ -218,7 +223,8 @@ class VIPL_HR(utils.MyDataset):
         x_path = self.input_files[idx]
         y_path = self.input_files[idx].replace("input", "label")
         x = torch.from_numpy(np.load(x_path))  # C x T x H x W
+        y = torch.from_numpy(np.load(y_path))  # T,
+        Fs = torch.from_numpy(self.Fs[idx])
         if self.config.trans is not None:
             x = self.config.trans(x)
-        y = torch.from_numpy(np.load(y_path))  # T,
-        return x, y
+        return x, y, Fs

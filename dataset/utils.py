@@ -126,7 +126,8 @@ class MyDataset(data.Dataset):
         super(MyDataset, self).__init__()
         self.config = config
         self.source = source
-        self.input_files = pd.read_csv(self.config.record_path)["input_files"].values.tolist()
+        self.record = pd.read_csv(self.config.record_path)
+        self.input_files = self.record["input_files"].values.tolist()
         self.Fs = self.config.Fs  # 30
 
     def __len__(self):
