@@ -57,6 +57,10 @@ class HRCELoss(nn.Module):
         # B x range
         complex_absolute = torch.sum(preds * torch.sin(k * temp), dim=-1) ** 2 \
                            + torch.sum(preds * torch.cos(k * temp), dim=-1) ** 2
+        # 归一化
+        norm_t = (torch.ones(B, device=wave.device) / torch.sum(complex_absolute, dim=1))
+        norm_t = norm_t.view(-1, 1)  # B x 1
+        complex_absolute = complex_absolute * norm_t  # B x range
         # 平移区间 [40, 150] -> [0, 110]
         labels -= self.low_bound
         labels = labels.type(torch.long).view(B)
@@ -66,10 +70,6 @@ class HRCELoss(nn.Module):
         whole_max_idx = whole_max_idx + self.low_bound"""
 
         if self.use_snr:
-            # 归一化
-            norm_t = (torch.ones(B, device=wave.device) / torch.sum(complex_absolute, dim=1))
-            norm_t = norm_t.view(-1, 1)  # B x 1
-            complex_absolute = complex_absolute * norm_t  # B x range
             # CE loss
             loss = self.cross_entropy(complex_absolute, labels)
             # truncate
