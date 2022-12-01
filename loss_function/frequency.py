@@ -62,8 +62,9 @@ class HRCELoss(nn.Module):
         norm_t = norm_t.view(-1, 1)  # B x 1
         complex_absolute = complex_absolute * norm_t  # B x range
         # 平移区间 [40, 150] -> [0, 110]
-        labels -= self.low_bound
-        labels = labels.type(torch.long).view(B)
+        gts = labels.clone()
+        gts -= self.low_bound
+        gts = gts.type(torch.long).view(B)
 
         """# 预测心率
         whole_max_val, whole_max_idx = complex_absolute.max(1)
@@ -71,11 +72,11 @@ class HRCELoss(nn.Module):
 
         if self.use_snr:
             # CE loss
-            loss = self.cross_entropy(complex_absolute, labels)
+            loss = self.cross_entropy(complex_absolute, gts)
             # truncate
-            left = labels - self.delta  # B,
+            left = gts - self.delta  # B,
             left[left.le(0)] = 0
-            right = labels + self.delta
+            right = gts + self.delta
             right[right.ge(self.high_bound - self.low_bound - 1)] = self.high_bound - self.low_bound - 1
             # SNR
             loss_snr = 0.0
@@ -85,6 +86,6 @@ class HRCELoss(nn.Module):
                 loss_snr = loss_snr / B
             loss += loss_snr
         else:
-            loss = self.cross_entropy(complex_absolute, labels)
+            loss = self.cross_entropy(complex_absolute, gts)
 
         return loss  # , whole_max_idx

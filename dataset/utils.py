@@ -121,6 +121,11 @@ def standardize(data):
     return data
 
 
+def normalize_frame(frame):
+    """[0, 255] -> [-1, 1]"""
+    return (frame - 127.5) / 128
+
+
 class MyDataset(data.Dataset):
     def __init__(self, config, source="PURE"):
         super(MyDataset, self).__init__()
