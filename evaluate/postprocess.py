@@ -127,3 +127,16 @@ def peak_physiology(signal: np.ndarray, target="pulse", Fs=30, diff=True, detren
         phys.append(60 * Fs / np.diff(peaks).mean(axis=-1))
 
     return np.asarray(phys)
+
+
+def cal_hrv(signal: np.ndarray, target="pulse", Fs=30, diff=True, detrend_flag=True):
+    """
+    计算 HRV: LF, HF, LF / HF, 
+    :param signal:
+    :param target:
+    :param Fs:
+    :param diff:
+    :param detrend_flag:
+    :return:
+    """
+    pass

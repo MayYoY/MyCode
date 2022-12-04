@@ -64,6 +64,8 @@ class HRCELoss(nn.Module):
         # 平移区间 [40, 150] -> [0, 110]
         gts = labels.clone()
         gts -= self.low_bound
+        gts[gts.le(0)] = 0
+        gts[gts.ge(self.high_bound - self.low_bound - 1)] = self.high_bound - self.low_bound - 1
         gts = gts.type(torch.long).view(B)
 
         """# 预测心率

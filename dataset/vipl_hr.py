@@ -68,7 +68,7 @@ class Preprocess:
                     frames, Fs = self.read_video(si)  # T x H x W x C, [0, 255]
                     waves = self.read_wave(si)  # T_w,
                     fun = interpolate.CubicSpline(range(len(waves)), waves)
-                    x_new = np.linspace(0, len(waves), num=len(frames))
+                    x_new = np.linspace(0, len(waves) - 1, num=len(frames))  # linspace 为闭区间
                     gts = fun(x_new)  # T
                     # detect -> crop -> resize -> transform -> chunk -> save
                     # n x len x H x W x C, n x len
@@ -234,7 +234,7 @@ class FramePreprocess:
                     clip_range, Fs = self.read_video(si)  # T,
                     waves = self.read_wave(si)  # T_w,
                     fun = interpolate.CubicSpline(range(len(waves)), waves)
-                    x_new = np.linspace(0, len(waves), num=len(clip_range))
+                    x_new = np.linspace(0, len(waves) - 1, num=len(clip_range))
                     gts = fun(x_new)  # T
                     # chunk, n x len, n x len
                     frames_clips, gts_clips = self.preprocess(clip_range, gts)
