@@ -174,10 +174,11 @@ def cal_hrv(wave, Fs, bandpass=True, interpolation=True):
         fun = interpolate.CubicSpline(range(len(temp)), temp)
         x = np.linspace(0, len(temp) - 1, num=round(256 / Fs * len(temp)))
         y = fun(x)
+        x = np.linspace(0, (len(y) - 1) / 256, num=len(y))  # 采样时间, 假设为均匀采样
     else:
         y = temp.copy()
+        x = np.linspace(0, (len(y) - 1) / Fs, num=len(y))  # 采样时间, 假设为均匀采样
     #  HRV was performed by PSD estimation using the Lomb periodogram
-    x = np.linspace(0, (len(y) - 1) / 256, num=len(y))  # 采样时间, 假设为均匀采样
     freq = np.arange(1, 501) / 1000  # 需要计算的频率点
     psd = lombscargle(x, y, freq, normalize=True)
     # LF, HF:the area under the PSD curve corresponding
