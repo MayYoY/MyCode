@@ -279,7 +279,10 @@ class FramePreprocess:
             # 记录 clip 的范围
             start_list.append(frames_clips[i, 0])
             end_list.append(frames_clips[i, -1] + 1)
-        input_list = [data_path + os.sep + "img"] * len(gts_clips)
+        if self.config.LARGE_FACE_BOX:
+            input_list = [data_path + os.sep + "img"] * len(gts_clips)
+        else:
+            input_list = [data_path + os.sep + "nolarge_img"] * len(gts_clips)
         fold_list = [single_info["fold"]] * len(gts_clips)
         Fs_list = [single_info["Fs"]] * len(gts_clips)
         return input_list, wave_list, start_list, end_list, fold_list, HR_list, Fs_list
@@ -315,19 +318,23 @@ class FramePreprocess:
             ret, frame = vid.read()
 
         frames = np.asarray(frames)
-        # 人脸检测并截取
-        frames = utils.resize(frames, self.config.DYNAMIC_DETECTION,
-                              self.config.DYNAMIC_DETECTION_FREQUENCY,
-                              self.config.W, self.config.H,
-                              self.config.LARGE_FACE_BOX,
-                              self.config.CROP_FACE,
-                              self.config.LARGE_BOX_COEF).astype(np.uint8)
-        # 保存处理好的帧
-        save_dir = data_path + os.sep + "img"
-        os.makedirs(save_dir, exist_ok=True)
-        for i, frame in enumerate(frames):
-            frame = cv.cvtColor(frame, cv.COLOR_RGB2BGR)
-            cv.imwrite(save_dir + os.sep + f"{i}.png", frame)
+        if self.config.MODIFY:
+            # 人脸检测并截取
+            frames = utils.resize(frames, self.config.DYNAMIC_DETECTION,
+                                  self.config.DYNAMIC_DETECTION_FREQUENCY,
+                                  self.config.W, self.config.H,
+                                  self.config.LARGE_FACE_BOX,
+                                  self.config.CROP_FACE,
+                                  self.config.LARGE_BOX_COEF).astype(np.uint8)
+            # 保存处理好的帧
+            if self.config.LARGE_FACE_BOX:
+                save_dir = data_path + os.sep + "img"
+            else:
+                save_dir = data_path + os.sep + "nolarge_img"
+            os.makedirs(save_dir, exist_ok=True)
+            for i, frame in enumerate(frames):
+                frame = cv.cvtColor(frame, cv.COLOR_RGB2BGR)
+                cv.imwrite(save_dir + os.sep + f"{i}.png", frame)
         # for return
         clips_range = np.arange(len(frames))
         if data_path[-1] == "2":

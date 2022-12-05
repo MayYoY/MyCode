@@ -2,13 +2,14 @@ import numpy as np
 import pandas as pd
 import cv2 as cv
 from math import ceil
+from mtcnn import MTCNN
 
 import torch
 from torch.utils import data
 
 
 def resize(frames, dynamic_det, det_length,
-           w, h, larger_box, crop_face, larger_box_size, detector=None):
+           w, h, larger_box, crop_face, larger_box_size):
     """
     :param frames:
     :param dynamic_det: 是否动态检测
@@ -18,7 +19,6 @@ def resize(frames, dynamic_det, det_length,
     :param larger_box: whether to enlarge the detected region.
     :param crop_face:  whether to crop the frames.
     :param larger_box_size:
-    :param detector: dir of facial detector
     """
     if dynamic_det:
         det_num = ceil(frames.shape[0] / det_length)  # 检测次数
@@ -26,10 +26,10 @@ def resize(frames, dynamic_det, det_length,
         det_num = 1
     face_region = []
     # 获取人脸区域
+    detector = MTCNN()
     for idx in range(det_num):
         if crop_face:
-            assert detector is not None, "Detector is required if need to crop face!"
-            face_region.append(facial_detection(frames[det_length * idx], detector,
+            face_region.append(facial_detection(detector, frames[det_length * idx],
                                                 larger_box, larger_box_size))
         else:  # 不截取
             face_region.append([0, 0, frames.shape[1], frames.shape[2]])
@@ -46,37 +46,38 @@ def resize(frames, dynamic_det, det_length,
             reference_index = 0
         if crop_face:
             face_region = face_region_all[reference_index]
-            frame = frame[max(face_region[1], 0):min(face_region[1] + face_region[3], frame.shape[0]),
-                    max(face_region[0], 0):min(face_region[0] + face_region[2], frame.shape[1])]
-        resize_frames[i] = cv.resize(frame, (w, h), interpolation=cv.INTER_AREA)
+            frame = frame[max(face_region[1], 0):min(face_region[3], frame.shape[0]),
+                          max(face_region[0], 0):min(face_region[2], frame.shape[1])]
+        resize_frames[i] = cv.resize(frame, (w + 4, h + 4),
+                                     interpolation=cv.INTER_CUBIC)[2: w + 2, 2: h + 2, :]
     return resize_frames
 
 
-def facial_detection(frame, detector, larger_box=False, larger_box_size=1.0):
+def facial_detection(detector, frame, larger_box=False, larger_box_size=1.0):
     """
-    检测人脸区域
-    :param frame:
+    利用 MTCNN 检测人脸区域
     :param detector:
+    :param frame:
     :param larger_box: 是否放大 bbox, 处理运动情况
     :param larger_box_size:
     """
-    detector = cv.CascadeClassifier(detector)
-    face_zone = detector.detectMultiScale(frame)
+    face_zone = detector.detect_faces(frame)
     if len(face_zone) < 1:
         print("Warning: No Face Detected!")
-        result = [0, 0, frame.shape[0], frame.shape[1]]
-    elif len(face_zone) >= 2:
-        result = np.argmax(face_zone, axis=0)
-        result = face_zone[result[2]]
+        return [0, 0, frame.shape[0], frame.shape[1]]
+    if len(face_zone) >= 2:
         print("Warning: More than one faces are detected(Only cropping the biggest one.)")
-    else:
-        result = face_zone[0]
+    result = face_zone[0]['box']
+    h = result[3]
+    w = result[2]
+    result[2] += result[0]
+    result[3] += result[1]
     if larger_box:
         print("Larger Bounding Box")
-        result[0] = max(0, result[0] - (larger_box_size - 1.0) / 2 * result[2])
-        result[1] = max(0, result[1] - (larger_box_size - 1.0) / 2 * result[3])
-        result[2] = larger_box_size * result[2]
-        result[3] = larger_box_size * result[3]
+        result[0] = round(max(0, result[0] + (1. - larger_box_size) / 2 * w))
+        result[1] = round(max(0, result[1] + (1. - larger_box_size) / 2 * h))
+        result[2] = round(max(0, result[0] + (1. + larger_box_size) / 2 * w))
+        result[3] = round(max(0, result[1] + (1. + larger_box_size) / 2 * h))
     return result
 
 
