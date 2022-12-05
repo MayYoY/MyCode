@@ -193,9 +193,6 @@ class Preprocess:
 
 
 class FramePreprocess:
-    """
-    以 .png 格式保存截取的人脸区域, 记录 clip range 节省存储空间
-    """
     def __init__(self, config):
         self.config = config
         # [p1, p2, ..., pn]
@@ -216,7 +213,7 @@ class FramePreprocess:
         file_num = len(self.dirs)
         progress_bar = tqdm(list(range(file_num)))
         csv_info = {"input_files": [], "wave_files": [], "start": [], "end": [],
-                    "fold": [], "average_HR": [], "Fs": []}
+                    "fold": [], "average_HR": [], "Fs": [], "task": [], "source": []}
         for pi in self.dirs:  # i_th subject
             p_idx = re.findall("p(\d\d?\d?)", pi)[0]  # p1, p2, ..., p10, p100, p101
             tasks = glob.glob(pi + os.sep + "*")  # [v1(, v1-2), v2, ...]
@@ -227,11 +224,10 @@ class FramePreprocess:
                     t_idx = re.findall("v(\d-\d)", ti)[0]  # v1-2
                 sources = glob.glob(ti + os.sep + "*")  # [source1, source2, ...]
                 for si in sources:
-                    # 不需要 NIR
-                    if si[-1] == '4':
-                        continue
+                    s_idx = re.findall("source(\d)", si)[0]  # source_i
+                    filename = f"p{p_idx}_v{t_idx}_source{s_idx}"
                     # 插值以对齐
-                    clip_range, Fs = self.read_video(si)  # T,
+                    clip_range, Fs = self.read_video(si, filename)  # T,
                     waves = self.read_wave(si)  # T_w,
                     fun = interpolate.CubicSpline(range(len(waves)), waves)
                     x_new = np.linspace(0, len(waves) - 1, num=len(clip_range))
@@ -239,20 +235,24 @@ class FramePreprocess:
                     # chunk, n x len, n x len
                     frames_clips, gts_clips = self.preprocess(clip_range, gts)
                     # 命名信息
-                    s_idx = re.findall("source(\d)", si)[0]
-                    single_info = {"filename": f"p{p_idx}_v{t_idx}_source{s_idx}",
+                    single_info = {"filename": filename,
                                    "fold": self.folds[int(p_idx)], "Fs": Fs}
                     # 平均 HR
                     gt_HR = pd.read_csv(si + os.sep + "gt_HR.csv")["HR"].values
                     # input_list, wave_list, start_list, end_list, fold_list, HR_list, Fs_list
                     temp = self.save(frames_clips, gts_clips, gt_HR, single_info, si)
-                    csv_info["input_files"] += temp[0]
-                    csv_info["wave_files"] += temp[1]
-                    csv_info["start"] += temp[2]
-                    csv_info["end"] += temp[3]
-                    csv_info["fold"] += temp[4]
-                    csv_info["average_HR"] += temp[5]
-                    csv_info["Fs"] += temp[6]
+                    csv_info["wave_files"] += temp[0]
+                    csv_info["start"] += temp[1]
+                    csv_info["end"] += temp[2]
+                    csv_info["average_HR"] += temp[3]
+                    # clips 间相同的信息
+                    N = len(gts_clips)
+                    csv_info["input_files"] += [self.config.img_cache + os.sep +
+                                                f"{single_info['filename']}"] * N
+                    csv_info["fold"] += [single_info["fold"]] * N
+                    csv_info["Fs"] += [single_info["Fs"]] * N
+                    csv_info["task"] += [int(t_idx[0])] * N
+                    csv_info["source"] += [int(s_idx)] * N
             progress_bar.update(1)
 
         csv_info = pd.DataFrame(csv_info)
@@ -262,8 +262,7 @@ class FramePreprocess:
              gt_HR: np.ndarray, single_info: dict, data_path: str):
         """Saves the preprocessing data."""
         # 生成对应的文件夹
-        output_path = data_path + os.sep + "gt" + os.sep + str(self.config.CHUNK_LENGTH)
-        os.makedirs(output_path, exist_ok=True)
+        os.makedirs(self.config.gt_cache, exist_ok=True)
         wave_list = []  # 标签路径
         start_list = []  # clip 范围
         end_list = []
@@ -273,19 +272,13 @@ class FramePreprocess:
         for i in range(len(gts_clips)):
             HR_list.append(gt_HR[i * step: (i + 1) * step].mean())  # clip 的平均 HR
             # 保存处理好的 wave clip
-            label_path = output_path + os.sep + f"{single_info['filename']}_label{i}.npy"
+            label_path = self.config.gt_cache + os.sep + f"{single_info['filename']}_label{i}.npy"
             np.save(label_path, gts_clips[i])
             wave_list.append(label_path)
             # 记录 clip 的范围
             start_list.append(frames_clips[i, 0])
             end_list.append(frames_clips[i, -1] + 1)
-        if self.config.LARGE_FACE_BOX:
-            input_list = [data_path + os.sep + "img"] * len(gts_clips)
-        else:
-            input_list = [data_path + os.sep + "nolarge_img"] * len(gts_clips)
-        fold_list = [single_info["fold"]] * len(gts_clips)
-        Fs_list = [single_info["Fs"]] * len(gts_clips)
-        return input_list, wave_list, start_list, end_list, fold_list, HR_list, Fs_list
+        return wave_list, start_list, end_list, HR_list
 
     def preprocess(self, clip_range, gts):
         """
@@ -304,21 +297,23 @@ class FramePreprocess:
 
         return frames_clips, gts_clips
 
-    def read_video(self, data_path):
+    def read_video(self, data_path, filename):
         """读取视频, 人脸检测, 保存帧; 返回帧下标, 帧率"""
-        vid = cv.VideoCapture(data_path + os.sep + "video.avi")
-        vid.set(cv.CAP_PROP_POS_MSEC, 0)  # 设置从 0 开始读取
-        ret, frame = vid.read()
-        frames = list()
-        while ret:
-            frame = cv.cvtColor(np.array(frame), cv.COLOR_BGR2RGB)
-            frame = np.asarray(frame)
-            frame[np.isnan(frame)] = 0
-            frames.append(frame)
-            ret, frame = vid.read()
-
-        frames = np.asarray(frames)
+        save_dir = self.config.img_cache + os.sep + filename
         if self.config.MODIFY:
+            vid = cv.VideoCapture(data_path + os.sep + "video.avi")
+            vid.set(cv.CAP_PROP_POS_MSEC, 0)  # 设置从 0 开始读取
+            ret, frame = vid.read()
+            frames = list()
+            while ret:
+                frame = cv.cvtColor(np.array(frame), cv.COLOR_BGR2RGB)
+                frame = np.asarray(frame)
+                frame[np.isnan(frame)] = 0
+                frames.append(frame)
+                ret, frame = vid.read()
+
+            frames = np.asarray(frames)
+
             # 人脸检测并截取
             frames = utils.resize(frames, self.config.DYNAMIC_DETECTION,
                                   self.config.DYNAMIC_DETECTION_FREQUENCY,
@@ -327,20 +322,19 @@ class FramePreprocess:
                                   self.config.CROP_FACE,
                                   self.config.LARGE_BOX_COEF).astype(np.uint8)
             # 保存处理好的帧
-            if self.config.LARGE_FACE_BOX:
-                save_dir = data_path + os.sep + "img"
-            else:
-                save_dir = data_path + os.sep + "nolarge_img"
-            os.makedirs(save_dir, exist_ok=True)
             for i, frame in enumerate(frames):
                 frame = cv.cvtColor(frame, cv.COLOR_RGB2BGR)
+                os.makedirs(save_dir, exist_ok=True)
                 cv.imwrite(save_dir + os.sep + f"{i}.png", frame)
+            T = len(frames)
+        else:
+            T = len(glob.glob(save_dir + os.sep + "*.png"))
         # for return
-        clips_range = np.arange(len(frames))
+        clips_range = np.arange(T)
         if data_path[-1] == "2":
             Fs = 30
         else:
-            Fs = len(frames) * 1000 / np.loadtxt(data_path + os.sep + "time.txt")[-1]
+            Fs = T * 1000 / np.loadtxt(data_path + os.sep + "time.txt")[-1]
         return clips_range, Fs
 
     @staticmethod
@@ -354,49 +348,10 @@ class FramePreprocess:
         return waves
 
 
-class VIPL_HR(utils.MyDataset):
-    """
-    VIPL-HR 包含多种场景, 对 record 的处理比较特殊
-    """
+class VIPL_HR(data.Dataset):
     def __init__(self, config):
-        super(VIPL_HR, self).__init__(config=config, source="VIPL-HR")
-        tasks = self.record["task"].values.tolist()
-        sources = self.record["source"].values.tolist()
-        folds = self.record["fold"].values.tolist()
-        self.Fs = self.record["Fs"].values.tolist()
-        # 选定指定视频
-        if config.type == "RGB":
-            m1 = [s != 4 for s in sources]
-        else:
-            m1 = [s == 4 for s in sources]  # NIR
-        if config.task is not None:
-            m2 = [int(t[0]) in config.task for t in tasks]
-        else:
-            m2 = [True] * len(tasks)
-        if config.fold is not None:
-            m3 = [f in config.fold for f in folds]
-        else:
-            m3 = [True] * len(folds)
-        temp = []
-        for i, file in enumerate(self.input_files):
-            if m1[i] and m2[i] and m3[i]:
-                temp.append(file)
-        self.input_files = temp
-
-    def __getitem__(self, idx):
-        x_path = self.input_files[idx]
-        y_path = self.input_files[idx].replace("input", "label")
-        x = torch.from_numpy(np.load(x_path))  # C x T x H x W
-        y = torch.from_numpy(np.load(y_path))  # T,
-        Fs = torch.from_numpy(self.Fs[idx])
-        if self.config.trans is not None:
-            x = self.config.trans(x)
-        return x, y, Fs
-
-
-class FrameVIPL(data.Dataset):
-    def __init__(self, config):
-        super(FrameVIPL, self).__init__()
+        # TODO: 是否筛除 NIR or 特定任务
+        super(VIPL_HR, self).__init__()
         record = pd.read_csv(config.record)
         self.config = config
         self.input_files = []
@@ -406,7 +361,7 @@ class FrameVIPL(data.Dataset):
         self.average_hrs = []
         self.Fs = []
         for i in range(len(record)):
-            if record.loc[i, "fold"] in config.folds:
+            if self.isValid(record, i):
                 self.input_files.append(record.loc[i, "input_files"])
                 self.wave_files.append(record.loc[i, "wave_files"])
                 self.starts.append(record.loc[i, "start"])
@@ -414,25 +369,35 @@ class FrameVIPL(data.Dataset):
                 self.average_hrs.append(record.loc[i, "average_HR"])
                 self.Fs.append(record.loc[i, "Fs"])
 
+    def isValid(self, record, idx):
+        flag = True
+        if self.config.folds:
+            flag &= record.loc[idx, "fold"] in self.config.folds
+        if self.config.tasks:
+            flag &= record.loc[idx, "task"] in self.config.folds
+        if self.config.sources:
+            flag &= record.loc[idx, "source"] in self.config.folds
+        return flag
+
     def __len__(self):
         return len(self.input_files)
 
     def __getitem__(self, idx):
-        # 读取对应帧
         x_path = self.input_files[idx]
         x = []
         for i in range(self.starts[idx], self.ends[idx]):
             temp = cv.imread(x_path + os.sep + f"{i}.png")
-            temp = cv.cvtColor(temp, cv.COLOR_BGR2RGB)
-            x.append(temp.transpose(2, 0, 1))
-        x = utils.normalize_frame(np.asarray(x))  # 归一化
-        x = torch.from_numpy(x)
+            # H x W x C
+            x.append(cv.cvtColor(temp, cv.COLOR_BGR2RGB))
+        x = utils.normalize_frame(np.asarray(x, dtype=np.double))  # 归一化
+        x = torch.from_numpy(x).permute(3, 0, 1, 2)  # T x H x W x C -> C x T x H x W
         # 读取标签信息
         y_path = self.wave_files[idx]
         y = torch.from_numpy(np.load(y_path))  # T,
         average_hr = torch.tensor([self.average_hrs[idx]])
         # 帧率
         Fs = torch.tensor([self.Fs[idx]])
+        # torchvision.transforms.RandomHorizontalFlip
         if self.config.trans is not None:
             x = self.config.trans(x)
-        return x, y, average_hr, Fs
+        return x.float(), y.float(), average_hr.float(), Fs.float()
