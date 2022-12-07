@@ -6,14 +6,21 @@ from . import postprocess
 
 class Accumulate:
     def __init__(self, n):
+        self.n = n
         self.cnt = [0] * n
         self.acc = [0] * n
-        self.avg = [0] * n
 
-    def update(self, val, n):
-        self.cnt += n
-        self.acc += val
-        self.avg = self.acc / self.cnt
+    def update(self, val: list, n):
+        if not isinstance(n, list):
+            n = [n] * self.n
+        if not isinstance(val, list):
+            val = [val] * self.n
+        self.cnt = [a + b for a, b in zip(self.cnt, n)]
+        self.acc = [a + b for a, b in zip(self.acc, val)]
+
+    def reset(self):
+        self.cnt = [0] * self.n
+        self.acc = [0] * self.n
 
 
 def cal_metric(preds: torch.Tensor, labels: torch.Tensor, config, post="fft", methods=None):

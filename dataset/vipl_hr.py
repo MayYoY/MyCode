@@ -66,6 +66,8 @@ class Preprocess:
                 sources = glob.glob(ti + os.sep + "*")  # [source1, source2, ...]
                 for si in sources:
                     frames, Fs = self.read_video(si)  # T x H x W x C, [0, 255]
+                    if len(frames) < self.config.CHUNK_LENGTH:
+                        continue
                     waves = self.read_wave(si)  # T_w,
                     fun = interpolate.CubicSpline(range(len(waves)), waves)
                     x_new = np.linspace(0, len(waves) - 1, num=len(frames))  # linspace 为闭区间
@@ -228,6 +230,8 @@ class FramePreprocess:
                     filename = f"p{p_idx}_v{t_idx}_source{s_idx}"
                     # 插值以对齐
                     clip_range, Fs = self.read_video(si, filename)  # T,
+                    if len(clip_range) < self.config.CHUNK_LENGTH:
+                        continue
                     waves = self.read_wave(si)  # T_w,
                     fun = interpolate.CubicSpline(range(len(waves)), waves)
                     x_new = np.linspace(0, len(waves) - 1, num=len(clip_range))
