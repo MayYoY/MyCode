@@ -3,6 +3,7 @@ import pandas as pd
 import cv2 as cv
 from math import ceil
 from mtcnn import MTCNN
+from sklearn.preprocessing import MinMaxScaler
 
 import torch
 from torch.utils import data
@@ -91,6 +92,54 @@ def chunk(frames, gts, chunk_length, chunk_stride=-1):
     bvps_clips = [gts[i: i + chunk_length]
                   for i in range(0, gts.shape[0] - chunk_length + 1, chunk_stride)]
     return np.array(frames_clips), np.array(bvps_clips)
+
+
+def get_blocks(frame, h_num=5, w_num=5):
+    h, w, _ = frame.shape  # 61, 59
+    h_len = h // h_num  # 12
+    w_len = w // w_num  # 11
+    ret = []
+    h_idx = [i * h_len for i in range(0, h_num)]  # 0, 12, 24, 36, 48
+    w_idx = [i * w_len for i in range(0, w_num)]
+    for i in h_idx:
+        for j in w_idx:
+            ret.append(frame[i: i + h_len, j: j + w_len, :])  # h_len x w_len x 3
+    return ret
+
+
+def get_STMap(frames, chunk_length=300, roi_num=25, chunk_stride=-1) -> np.ndarray:
+    """
+    :param frames: T x H x W x C or list[H x W x C], len = T
+    :param hrs:
+    :param chunk_length:
+    :param roi_num: 划分块数, 5 * 5 = 25
+    :return: clip_num x chunk_length (T1) x roi_num (25) x C (YUV, 3)
+    """
+    if chunk_stride < 0:
+        chunk_stride = chunk_length
+    clip_num = (len(frames) - chunk_length + chunk_stride) // chunk_stride
+    STMaps = []
+    scaler = MinMaxScaler()
+    for i in range(0, len(frames) - chunk_length + 1, chunk_stride):
+        temp = np.zeros((chunk_length, roi_num, 3))  # T1 x 25 x 3
+        for j, frame in enumerate(frames[i: i + chunk_length]):
+            blocks = get_blocks(frame)
+            for k, block in enumerate(blocks):
+                temp[j, k, :] = block.mean(axis=0).mean(axis=0)
+        # In order to make the best use of the HR signals,
+        # a min-max normalization is applied to each temporal signal,
+        # and the values of the temporal series are scaled into [0, 255]
+        # 首先用 minmax_scaler 缩放至 [0, 1], 再 * 255; **在时间维进行**
+        for j in range(roi_num):
+            scaled_c0 = scaler.fit_transform(temp[:, j, 0].reshape(-1, 1))
+            temp[:, j, 0] = (scaled_c0 * 255.).reshape(-1).astype(np.uint8)
+            scaled_c1 = scaler.fit_transform(temp[:, j, 1].reshape(-1, 1))
+            temp[:, j, 1] = (scaled_c1 * 255.).reshape(-1).astype(np.uint8)
+            scaled_c2 = scaler.fit_transform(temp[:, j, 2].reshape(-1, 1))
+            temp[:, j, 2] = (scaled_c2 * 255.).reshape(-1).astype(np.uint8)
+        STMaps.append(temp)
+    assert len(STMaps) == clip_num, "Number of Clips Error, Please check your code!"
+    return np.asarray(STMaps)
 
 
 def diff_normalize_data(data):
