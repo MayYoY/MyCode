@@ -57,7 +57,7 @@ def cal_metric(preds: torch.Tensor, labels: torch.Tensor, config, post="fft", me
         elif m == "MAPE":
             ret.append((np.abs((pred_phys - label_phys) / label_phys)).mean() * 100)
         elif m == "R":
-            temp = np.corrcoef(pred_phys, label_phys)[0, 1]
+            temp = np.corrcoef(pred_phys, label_phys)
             if np.isnan(temp).any() or np.isinf(temp).any():
                 ret.append(-1 * np.ones(1))
             else:
