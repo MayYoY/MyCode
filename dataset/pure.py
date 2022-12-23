@@ -89,8 +89,7 @@ class Preprocess:
                               self.config.W, self.config.H,
                               self.config.LARGE_FACE_BOX,
                               self.config.CROP_FACE,
-                              self.config.LARGE_BOX_COEF,
-                              self.config.detector)
+                              self.config.LARGE_BOX_COEF)
         # 视频 transform, 丢弃最后一帧
         x = list()
         for data_type in self.config.DATA_TYPE:
