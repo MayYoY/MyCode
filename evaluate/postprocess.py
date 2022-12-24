@@ -6,6 +6,10 @@ from scipy.sparse import spdiags
 from scipy import interpolate
 
 
+def next_power_of_2(x):
+    return 1 if x == 0 else 2 ** (x - 1).bit_length()
+
+
 def bandpass_hamming(Fs, taps_num=128, cutoff=None):
     """
     bandpass filtered (128-point Hamming window, 0.7–4 Hz)
@@ -102,7 +106,8 @@ def fft_physiology(signal: np.ndarray, target="pulse", Fs=30, diff=True, detrend
     # bandpass
     signal = scipy.signal.filtfilt(b, a, np.double(signal))
     # get psd
-    freq, psd = periodogram(signal, fs=Fs, nfft=4 * signal.shape[-1], detrend=False)
+    N = next_power_of_2(signal.shape[-1])
+    freq, psd = periodogram(signal, fs=Fs, nfft=N, detrend=False)
     # get mask
     if target == "pulse":
         mask = np.argwhere((freq >= 0.75) & (freq <= 2.5))
@@ -121,7 +126,7 @@ def fft_physiology(signal: np.ndarray, target="pulse", Fs=30, diff=True, detrend
 
 def peak_physiology(signal: np.ndarray, target="pulse", Fs=30, diff=True, detrend_flag=True):
     """
-    利用 fft 计算 HR or FR
+    利用 ibi 计算 HR or FR
     get filter -> detrend -> get psd and freq -> get mask -> get HR
     :param signal: T, or B x T
     :param target: pulse or respiration
@@ -141,6 +146,8 @@ def peak_physiology(signal: np.ndarray, target="pulse", Fs=30, diff=True, detren
         [b, a] = butter(1, [0.08 / Fs * 2, 0.5 / Fs * 2], btype='bandpass')
     # bandpass
     signal = scipy.signal.filtfilt(b, a, np.double(signal))
+    T = signal.shape[-1]
+    signal = signal.reshape(-1, T)
     phys = []
     for s in signal:
         peaks, _ = find_peaks(s)

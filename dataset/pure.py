@@ -73,7 +73,7 @@ class Preprocess:
             label_path_name = self.output_path + os.sep + f"{filename}_label{count}.npy"
             file_list.append(self.output_path + os.sep + f"{filename}_input{count}.npy")
             # T x H x W x C -> C x T x H x W
-            np.save(input_path_name, frames_clips[i].transpose((3, 0, 1, 2)))
+            np.save(input_path_name, frames_clips[i].transpose((3, 0, 1, 2)).astype(np.float32))
             np.save(label_path_name, gts_clips[i])
             count += 1
         return file_list
