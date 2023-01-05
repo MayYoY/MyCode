@@ -5,6 +5,46 @@ import numpy as np
 import torch.nn as nn
 
 
+class SNRLoss_dB_Signals(torch.nn.Module):
+    def __init__(self, N=1024, pulse_band=None):
+        super(SNRLoss_dB_Signals, self).__init__()
+        if pulse_band is None:
+            pulse_band = [45 / 60., 180 / 60.]
+        self.N = N
+        self.pulse_band = torch.tensor(pulse_band, dtype=torch.float32)
+
+    def forward(self, preds: torch.Tensor, labels: torch.Tensor, Fs=30):
+        device = preds.device
+        self.pulse_band = self.pulse_band.to(device)
+        T = preds.shape[-1]  # T
+        win_size = int(self.N / 256)  # 4
+
+        freq = torch.linspace(0, Fs / 2, int(self.N / 2) + 1, dtype=torch.float32).to(device)
+
+        low_idx = torch.argmin(torch.abs(freq - self.pulse_band[0]))
+        up_idx = torch.argmin(torch.abs(freq - self.pulse_band[1]))
+
+        preds = preds.view(-1, T)
+        labels = labels.view(-1, T)
+
+        # Generate GT heart indices from GT signals
+        Y = torch.fft.rfft(labels, n=self.N, dim=1, norm='forward')  # 单边傅里叶变换, B x (N / 2 + 1)
+        Y2 = torch.abs(Y) ** 2  # gt
+        hr_idx = torch.argmax(Y2[:, low_idx:up_idx], dim=1) + low_idx
+
+        P = torch.fft.rfft(preds, n=self.N, dim=1, norm='forward')
+        P2 = torch.abs(P) ** 2  # predict
+
+        loss = torch.empty((P.shape[0],), dtype=torch.float32)
+        for i, hr in enumerate(hr_idx):
+            signal_amp = torch.sum(P2[i, hr - win_size: hr + win_size])  # 信号项
+            # 噪声项
+            noise_amp = torch.sum(P2[i, low_idx: hr - win_size]) + torch.sum(P2[i, hr + win_size: up_idx])
+            loss[i] = -10 * torch.log10(signal_amp / (noise_amp + 1e-7))  # 转换为分贝
+        loss.to(device)
+        return torch.mean(loss)
+
+
 # TODO: 短序列心率计算不准确
 class HRCELoss(nn.Module):
     def __init__(self, T=300, delta=3, reduction="mean", use_snr=False):
