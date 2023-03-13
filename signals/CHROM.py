@@ -4,7 +4,7 @@ from scipy import signal
 from .utils import getRGB
 
 
-def CHROME(frames, Fs):
+def CHROM(frames, Fs):
     LPF = 0.7
     HPF = 2.5
     WinSec = 1.6
