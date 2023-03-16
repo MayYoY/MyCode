@@ -156,6 +156,43 @@ def peak_physiology(signal: np.ndarray, target="pulse", Fs=30, diff=True, detren
     return np.asarray(phys)
 
 
+def split_fft_hr(signal: np.ndarray, Fs=30, diff=False, detrend_flag=True):
+    """
+    reference: https://github.com/ZitongYu/PhysFormer/blob/main/Inference_HRevaluation.m
+    for video-level evaluation, only support one rppg signal every time
+    split rppg into 3 parts -> use psd to calculate their hrs -> calculate average hr
+    :param signal:
+    :param Fs:
+    :param diff:
+    :param detrend_flag:
+    :return:
+    """
+    if diff:
+        signal = signal.cumsum(axis=-1)
+    if detrend_flag:
+        signal = detrend(signal, 100)
+    # build bandpass
+    min_freq = 0.8 * 2 / Fs
+    max_freq = 3 * 2 / Fs
+    order = round(len(signal) / 10)
+    b = firwin(order + 1, [min_freq, max_freq], pass_zero="bandpass")
+    # filter and normalize
+    signal_filtered = scipy.signal.filtfilt(b, 1, np.double(signal))
+    signal_filtered = (signal_filtered - signal_filtered.mean()) / signal_filtered.std()
+    # welch + hanning for psd
+    split_len = len(signal_filtered) // 3
+    avg_hr = 0.
+    for i in range(3):
+        temp = signal_filtered[split_len * i: min(len(signal_filtered), split_len * (i + 1))]
+        freq, psd = welch(temp, fs=Fs, nfft=4097)
+        mask = np.argwhere((freq >= 0.7) & (freq <= 4)).reshape(-1)
+        freq = freq[mask]
+        idx = psd[mask].argmax(-1)
+        avg_hr += freq[idx] * 60
+
+    return avg_hr / 3
+
+
 def cal_hrv(wave, Fs, bandpass=True, interpolation=True):
     """
      detrend -> normalize -> filters -> interpolate -> calculate PSD -> get hrv
