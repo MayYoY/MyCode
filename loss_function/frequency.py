@@ -46,7 +46,7 @@ class SNRLoss_dB_Signals(torch.nn.Module):
 
 
 # TODO: 短序列心率计算不准确
-class HRCELoss(nn.Module):
+class FreqCELoss(nn.Module):
     def __init__(self, T=300, delta=3, reduction="mean", use_snr=False):
         """
         :param T: 序列长度
@@ -54,7 +54,7 @@ class HRCELoss(nn.Module):
         :param reduction:
         :param use_snr:
         """
-        super(HRCELoss, self).__init__()
+        super(FreqCELoss, self).__init__()
         self.T = T
         self.delta = delta
         self.low_bound = 40
@@ -131,3 +131,105 @@ class HRCELoss(nn.Module):
             loss = self.cross_entropy(complex_absolute, gts)
 
         return loss  # , whole_max_idx
+
+
+class PeriodicLoss(torch.nn.Module):
+    """ refer to https://arxiv.org/abs/2303.07944 """
+    def __init__(self, N=1024, delta=6, pulse_band=None, weights=None):
+        super(PeriodicLoss, self).__init__()
+        if pulse_band is None:
+            pulse_band = [40 / 60., 180 / 60.]
+        if weights is None:
+            weights = [1., 1., 1.]
+        self.N = N
+        self.delta = delta / 60  # bpm -> Hz
+        self.pulse_band = torch.tensor(pulse_band, dtype=torch.float32)
+        self.weights = weights
+
+    def forward(self, preds: torch.Tensor, Fs: float):
+        device = preds.device
+        self.pulse_band = self.pulse_band.to(device)
+        band_loss = torch.empty((preds.shape[0],), dtype=torch.float32, device=device)
+        sparse_loss = torch.empty((preds.shape[0],), dtype=torch.float32, device=device)
+        batch_psd = torch.zeros(int(self.N / 2) + 1, dtype=torch.float32, device=device)
+
+        freq = torch.linspace(0, Fs / 2, int(self.N / 2) + 1, dtype=torch.float32).to(device)
+        left = torch.argmin(torch.abs(freq - self.pulse_band[0]))
+        right = torch.argmin(torch.abs(freq - self.pulse_band[1]))
+        for i in range(len(preds)):
+
+            temp = preds[i]
+            psd = torch.fft.rfft(temp, n=self.N, norm="backward")
+            psd = torch.abs(psd) ** 2
+            batch_psd = batch_psd + psd
+
+            band_loss[i] = (torch.sum(psd[: left]) + torch.sum(psd[right:])) / (1e-8 + torch.sum(psd))
+
+            peak = torch.argmax(psd[left: right]) + left
+            delta = max(1, round(self.delta / (Fs / 2 / len(freq))))
+            sparse_loss[i] = (torch.sum(psd[left: peak - delta]) +
+                              torch.sum(psd[peak + delta: right])) / torch.sum(psd[left: right] + 1e-8)
+
+        batch_psd = batch_psd / (1e-8 + batch_psd.sum())
+        Q = torch.zeros_like(batch_psd, device=device)
+        Q[0] = batch_psd[0]
+        for i in range(1, Q.shape[0]):
+            Q[i] = batch_psd[i] + Q[i - 1]
+        Q = Q.clamp(min=0, max=1)
+        P = torch.distributions.Uniform(low=0, high=Fs / 2).cdf(freq).to(device)
+        variance_loss = ((P - Q) ** 2).mean()
+
+        band_loss = band_loss.mean()
+        sparse_loss = sparse_loss.mean()
+        return self.weights[0] * band_loss + self.weights[1] * sparse_loss + self.weights[2] * variance_loss
+
+
+class PeriodicLoss_diffFs(torch.nn.Module):
+    """
+    refer to https://arxiv.org/abs/2303.07944
+    Fs 波动, 无法计算 variance loss
+    """
+    def __init__(self, N=1024, delta=6, pulse_band=None, weights=None):
+        super(PeriodicLoss_diffFs, self).__init__()
+        if pulse_band is None:
+            pulse_band = [40 / 60., 180 / 60.]
+        if weights is None:
+            weights = [1., 1., 1.]
+        self.N = N
+        self.delta = delta / 60  # bpm -> Hz
+        self.pulse_band = torch.tensor(pulse_band, dtype=torch.float32)
+        self.weights = weights
+
+    def forward(self, preds: torch.Tensor, Fs: torch.Tensor):
+        device = preds.device
+        self.pulse_band = self.pulse_band.to(device)
+        band_loss = torch.empty((preds.shape[0],), dtype=torch.float32, device=device)
+        sparse_loss = torch.empty((preds.shape[0],), dtype=torch.float32, device=device)
+        for i in range(len(preds)):
+            # 需要逐样本计算, 因为 Fs 波动,
+            freq = torch.linspace(0, Fs[i] / 2, int(self.N / 2) + 1, dtype=torch.float32).to(device)
+            left = torch.argmin(torch.abs(freq - self.pulse_band[0]))
+            right = torch.argmin(torch.abs(freq - self.pulse_band[1]))
+
+            temp = preds[i]
+            psd = torch.fft.rfft(temp, n=self.N, norm="backward")
+            psd = torch.abs(psd) ** 2
+
+            band_loss[i] = (torch.sum(psd[: left]) + torch.sum(psd[right:])) / (1e-8 + torch.sum(psd))
+
+            peak = torch.argmax(psd[left: right]) + left
+            delta = max(1, round(self.delta / float(Fs[i] / 2 / len(freq))))
+            sparse_loss[i] = (torch.sum(psd[left: peak - delta]) +
+                              torch.sum(psd[peak + delta: right])) / torch.sum(psd[left: right] + 1e-8)
+
+        band_loss = band_loss.mean()
+        sparse_loss = sparse_loss.mean()
+        return self.weights[0] * band_loss + self.weights[1] * sparse_loss
+
+
+if __name__ == '__main__':
+    loss_fun = PeriodicLoss_diffFs()
+    preds = torch.randn(4, 160)
+    Fs = torch.tensor([30, 25, 30, 20])
+    loss = loss_fun(preds, Fs)
+    print(loss)
